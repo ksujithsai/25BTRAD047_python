@@ -1,0 +1,33 @@
+# 25BTRAD047_python
+"""print("hello world")
+print("i am sujith royal")
+
+
+
+
+a = int(input("enter a number"))
+b = int (input("enter another number"))
+c = a+b
+d = a*b
+print(c)
+print(d)
+
+
+
+s = int(input("side of a sqaure"))
+area = s * s
+print("area of square:",area) """
+
+
+
+"""a = int(input("enter a number"))
+b = int (input("enter another number"))
+c = input("enter the operation u want to performe")
+if c == "add":
+    print (a + b)
+if c == "sub" :
+    print (a - b)
+elif c == "mul":
+    print (a * b)
+else :
+    print (a / b)"""
