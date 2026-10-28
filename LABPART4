@@ -1,0 +1,325 @@
+"""Lab 11: Log File Reader - counts ERROR, WARNING and INFO entries."""
+import os
+import re
+import sys
+
+LEVELS = ["ERROR", "WARNING", "INFO"]
+# \b makes sure we match whole words only (e.g. not "INFORMATION")
+PATTERNS = {lvl: re.compile(r"\b" + lvl + r"\b") for lvl in LEVELS}
+
+
+def analyze_log(path):
+    """Return (counts, matched_lines, total_lines, blank, other) or raise."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Log file '{path}' not found.")
+    if os.path.getsize(path) == 0:
+        raise ValueError(f"Log file '{path}' is empty.")
+
+    counts = {lvl: 0 for lvl in LEVELS}
+    matched = {lvl: [] for lvl in LEVELS}
+    total = blank = other = 0
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for line_no, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                blank += 1
+                continue
+            total += 1
+            for lvl in LEVELS:              # first level found on the line wins
+                if PATTERNS[lvl].search(line):
+                    counts[lvl] += 1
+                    matched[lvl].append((line_no, line))
+                    break
+            else:
+                other += 1
+    return counts, matched, total, blank, other
+
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else "sample_app.log"
+    try:
+        counts, matched, total, blank, other = analyze_log(path)
+    except (FileNotFoundError, ValueError) as e:
+        print("Error:", e)
+        return
+    except PermissionError:
+        print(f"Error: no permission to read '{path}'.")
+        return
+
+    print(f"\n===== LOG SUMMARY: {path} =====")
+    for lvl in LEVELS:
+        pct = counts[lvl] / total * 100 if total else 0
+        print(f"{lvl:<8}: {counts[lvl]:>3}  ({pct:5.1f}%)")
+    print(f"{'Other':<8}: {other:>3}")
+    print(f"{'Total':<8}: {total:>3}  (blank lines skipped: {blank})")
+
+    # Verification: categories must add up to non-blank line count
+    ok = sum(counts.values()) + other == total
+    print("Verification:", "PASSED" if ok else "FAILED")
+
+    if matched["ERROR"]:
+        print("\n--- ERROR lines (need attention) ---")
+        for n, text in matched["ERROR"]:
+            print(f"line {n}: {text}")
+    if counts["ERROR"] > 0:
+        print(f"\nAlert: {counts['ERROR']} error(s) found - investigate.")
+    else:
+        print("\nSystem looks healthy: no errors found.")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+"""Lab 12: Student Data Manager using file operations (pipe-delimited text file)."""
+import os
+
+FILE = "students.txt"
+FIELDS = ["roll", "name", "department", "year", "cgpa"]
+
+
+# ---------- file operations ----------
+def load_students():
+    students = []
+    if not os.path.exists(FILE):
+        return students
+    with open(FILE, "r") as f:
+        for line in f:
+            parts = line.rstrip("\n").split("|")
+            if len(parts) == len(FIELDS):
+                students.append(dict(zip(FIELDS, parts)))
+    return students
+
+
+def save_students(students):
+    with open(FILE, "w") as f:
+        for s in students:
+            f.write("|".join(s[k] for k in FIELDS) + "\n")
+
+
+# ---------- validation ----------
+def valid_roll(v):  return v.isalnum()
+def valid_name(v):  return v.replace(" ", "").isalpha()
+def valid_dept(v):  return v.replace(" ", "").isalpha()
+def valid_year(v):  return v in {"1", "2", "3", "4"}
+def valid_cgpa(v):
+    try:
+        return 0 <= float(v) <= 10
+    except ValueError:
+        return False
+
+RULES = {
+    "roll": (valid_roll, "Roll number must be letters/digits only."),
+    "name": (valid_name, "Name must contain letters and spaces only."),
+    "department": (valid_dept, "Department must contain letters only."),
+    "year": (valid_year, "Year must be 1, 2, 3 or 4."),
+    "cgpa": (valid_cgpa, "CGPA must be a number between 0 and 10."),
+}
+
+
+def ask(field, current=None):
+    check, msg = RULES[field]
+    while True:
+        prompt = f"Enter {field}" + (f" [{current}]" if current else "") + ": "
+        v = input(prompt).strip()
+        if not v and current is not None:
+            return current                      # keep old value on update
+        if check(v):
+            return f"{float(v):.2f}" if field == "cgpa" else v
+        print("  Invalid:", msg)
+
+
+# ---------- features ----------
+def find(students, roll):
+    for s in students:
+        if s["roll"].lower() == roll.lower():
+            return s
+    return None
+
+
+def show(s):
+    print(f"{s['roll']:<10}{s['name']:<20}{s['department']:<15}{s['year']:<6}{s['cgpa']}")
+
+
+def add():
+    students = load_students()
+    roll = ask("roll")
+    if find(students, roll):
+        print("A student with this roll number already exists.")
+        return
+    students.append({"roll": roll, "name": ask("name"), "department": ask("department"),
+                     "year": ask("year"), "cgpa": ask("cgpa")})
+    save_students(students)
+    print("Record added.")
+
+
+def display_all():
+    students = load_students()
+    if not students:
+        print("No records found.")
+        return
+    print(f"{'Roll':<10}{'Name':<20}{'Dept':<15}{'Year':<6}CGPA")
+    print("-" * 56)
+    for s in students:
+        show(s)
+    print(f"Total students: {len(students)}")
+
+
+def search():
+    key = input("Search by roll number or name: ").strip().lower()
+    hits = [s for s in load_students() if key and (key == s["roll"].lower() or key in s["name"].lower())]
+    if not hits:
+        print("No matching record.")
+    for s in hits:
+        show(s)
+
+
+def update():
+    students = load_students()
+    s = find(students, input("Roll number to update: ").strip())
+    if not s:
+        print("Record not found.")
+        return
+    print("Press Enter to keep the current value.")
+    for field in FIELDS[1:]:
+        s[field] = ask(field, s[field])
+    save_students(students)
+    print("Record updated.")
+
+
+def delete():
+    students = load_students()
+    s = find(students, input("Roll number to delete: ").strip())
+    if not s:
+        print("Record not found.")
+        return
+    students.remove(s)
+    save_students(students)
+    print("Record deleted.")
+
+
+def main():
+    actions = {"1": add, "2": display_all, "3": search, "4": update, "5": delete}
+    while True:
+        print("\n=== STUDENT DATA MANAGER ===")
+        print("1.Add  2.Display all  3.Search  4.Update  5.Delete  6.Exit")
+        choice = input("Choice: ").strip()
+        if choice == "6":
+            print("Goodbye!")
+            break
+        actions.get(choice, lambda: print("Invalid choice."))()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+"""Lab 13: CSV-based Payroll Management System."""
+import csv
+import os
+import sys
+from collections import defaultdict
+
+HRA_RATE, DA_RATE, MEDICAL = 0.20, 0.10, 1250   # allowances
+PF_RATE, PROF_TAX = 0.12, 200                   # deductions
+OUT_FIELDS = ["emp_id", "name", "department", "basic", "hra", "da", "medical",
+              "gross", "pf", "prof_tax", "tds", "total_deductions", "net_salary"]
+
+
+def tds(gross):
+    """Simple illustrative monthly income-tax slabs on gross."""
+    tax = 0.0
+    if gross > 100000: tax += (gross - 100000) * 0.20; gross = 100000
+    if gross > 50000:  tax += (gross - 50000) * 0.10;  gross = 50000
+    if gross > 30000:  tax += (gross - 30000) * 0.05
+    return round(tax, 2)
+
+
+def compute(emp):
+    b = emp["basic"]
+    hra, da = b * HRA_RATE, b * DA_RATE
+    gross = b + hra + da + MEDICAL
+    pf, t = b * PF_RATE, tds(gross)
+    ded = pf + PROF_TAX + t
+    vals = [b, hra, da, MEDICAL, gross, pf, PROF_TAX, t, ded, gross - ded]
+    row = dict(emp_id=emp["emp_id"], name=emp["name"], department=emp["department"])
+    row.update({k: round(v, 2) for k, v in zip(OUT_FIELDS[3:], vals)})
+    return row
+
+
+def read_employees(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"'{path}' not found.")
+    good, bad = [], []
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        needed = {"emp_id", "name", "department", "basic_salary"}
+        if not reader.fieldnames or not needed.issubset(reader.fieldnames):
+            raise ValueError("CSV must have columns: " + ", ".join(sorted(needed)))
+        for n, r in enumerate(reader, start=2):
+            try:
+                basic = float(r["basic_salary"])
+                if basic <= 0 or not r["emp_id"].strip() or not r["name"].strip():
+                    raise ValueError
+                good.append(dict(emp_id=r["emp_id"].strip(), name=r["name"].strip(),
+                                 department=r["department"].strip(), basic=basic))
+            except (ValueError, TypeError):
+                bad.append((n, r))
+    return good, bad
+
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else "employees.csv"
+    try:
+        emps, bad = read_employees(path)
+    except (FileNotFoundError, ValueError) as e:
+        print("Error:", e)
+        return
+    if not emps:
+        print("No valid employee records to process.")
+        return
+
+    rows = [compute(e) for e in emps]
+    with open("salary_summary.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+    print(f"\n{'ID':<6}{'Name':<14}{'Dept':<12}{'Gross':>10}{'Deduct':>10}{'Net':>10}")
+    print("-" * 62)
+    for r in rows:
+        print(f"{r['emp_id']:<6}{r['name']:<14}{r['department']:<12}"
+              f"{r['gross']:>10.2f}{r['total_deductions']:>10.2f}{r['net_salary']:>10.2f}")
+
+    # Verification: net = gross - deductions for every row
+    assert all(abs(r["gross"] - r["total_deductions"] - r["net_salary"]) < 0.01 for r in rows)
+
+    dept = defaultdict(lambda: [0, 0.0, 0.0])
+    for r in rows:
+        d = dept[r["department"]]
+        d[0] += 1; d[1] += r["gross"]; d[2] += r["net_salary"]
+    print("\n--- Department summary ---")
+    for name, (cnt, g, n) in sorted(dept.items()):
+        print(f"{name:<12} employees={cnt}  gross={g:>10.2f}  net={n:>10.2f}")
+
+    print(f"\nEmployees processed : {len(rows)}")
+    print(f"Total gross payout  : {sum(r['gross'] for r in rows):.2f}")
+    print(f"Total net payout    : {sum(r['net_salary'] for r in rows):.2f}")
+    print(f"Highest net salary  : {max(rows, key=lambda r: r['net_salary'])['name']}")
+    if bad:
+        print(f"\nSkipped {len(bad)} invalid record(s) (CSV line numbers): "
+              + ", ".join(str(n) for n, _ in bad))
+    print("Detailed report saved to salary_summary.csv")
+
+
+if __name__ == "__main__":
+    main()
