@@ -1,0 +1,364 @@
+
+"""Lab Exercise 14: Bank Account System using OOP.
+
+Concepts: classes/objects, encapsulation (private attributes), validation,
+custom exceptions, inheritance (SavingsAccount), transaction history.
+"""
+from datetime import datetime
+
+
+class InvalidAmountError(Exception):
+    """Raised when an amount is not a positive number."""
+
+
+class InsufficientFundsError(Exception):
+    """Raised when a withdrawal would break the balance rules."""
+
+
+class BankAccount:
+    MIN_BALANCE = 0  # a plain account may be emptied, never overdrawn
+
+    def __init__(self, account_no, holder, opening_balance=0):
+        self._validate_amount(opening_balance, allow_zero=True)
+        self.account_no = account_no
+        self.holder = holder
+        self.__balance = opening_balance      # private: name-mangled
+        self.__history = []                   # private transaction log
+        if opening_balance:
+            self._log("OPENING", opening_balance, "OK")
+
+    # ---------- validation ----------
+    @staticmethod
+    def _validate_amount(amount, allow_zero=False):
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            raise InvalidAmountError("Amount must be a number.")
+        if amount < 0 or (amount == 0 and not allow_zero):
+            raise InvalidAmountError("Amount must be greater than zero.")
+
+    def _log(self, kind, amount, status):
+        self.__history.append((datetime.now().strftime("%H:%M:%S"),
+                               kind, amount, status, self.__balance))
+
+    # ---------- public operations ----------
+    def deposit(self, amount):
+        try:
+            self._validate_amount(amount)
+        except InvalidAmountError:
+            self._log("DEPOSIT", amount, "REJECTED")
+            raise
+        self.__balance += amount
+        self._log("DEPOSIT", amount, "OK")
+        return self.__balance
+
+    def withdraw(self, amount):
+        try:
+            self._validate_amount(amount)
+            if self.__balance - amount < self.MIN_BALANCE:
+                raise InsufficientFundsError(
+                    f"Insufficient balance: available {self.__balance}, "
+                    f"minimum allowed {self.MIN_BALANCE}.")
+        except (InvalidAmountError, InsufficientFundsError):
+            self._log("WITHDRAW", amount, "REJECTED")
+            raise
+        self.__balance -= amount
+        self._log("WITHDRAW", amount, "OK")
+        return self.__balance
+
+    def get_balance(self):
+        """Read-only access to the private balance."""
+        return self.__balance
+
+    def statement(self):
+        print(f"\n--- Statement: {self.holder} ({self.account_no}) ---")
+        print(f"{'Time':<9}{'Type':<10}{'Amount':>10}  {'Status':<9}{'Balance':>10}")
+        for t, kind, amt, status, bal in self.__history:
+            print(f"{t:<9}{kind:<10}{amt!s:>10}  {status:<9}{bal:>10}")
+
+    def __str__(self):
+        return f"{self.holder} [{self.account_no}] balance = {self.__balance}"
+
+
+class SavingsAccount(BankAccount):
+    """Inherits everything, but must keep a minimum balance."""
+    MIN_BALANCE = 500
+
+    def add_interest(self, rate_percent):
+        self._validate_amount(rate_percent)
+        return self.deposit(round(self.get_balance() * rate_percent / 100, 2))
+
+
+def attempt(label, action):
+    """Run a transaction and report success or the reason it failed."""
+    try:
+        result = action()
+        print(f"[OK]     {label} -> balance {result}")
+    except (InvalidAmountError, InsufficientFundsError) as e:
+        print(f"[FAILED] {label} -> {e}")
+
+
+if __name__ == "__main__":
+    acc = BankAccount("AC1001", "Asha", 2000)
+    print(acc)
+
+    print("\n== Routine transactions ==")
+    attempt("Deposit 1500", lambda: acc.deposit(1500))
+    attempt("Withdraw 700", lambda: acc.withdraw(700))
+    print("Balance enquiry:", acc.get_balance())
+
+    print("\n== Invalid transactions ==")
+    attempt("Deposit -200", lambda: acc.deposit(-200))
+    attempt("Deposit 0", lambda: acc.deposit(0))
+    attempt("Withdraw 'abc'", lambda: acc.withdraw("abc"))
+    attempt("Withdraw 99999 (insufficient)", lambda: acc.withdraw(99999))
+
+    print("\n== Encapsulation check ==")
+    try:
+        print(acc.__balance)
+    except AttributeError:
+        print("Direct access to acc.__balance blocked (AttributeError).")
+    acc.balance = 10**9  # creates a NEW unrelated attribute, real balance untouched
+    print("Real balance still:", acc.get_balance())
+
+    acc.statement()
+
+    print("\n== Savings account (inheritance, min balance 500) ==")
+    sav = SavingsAccount("SV2001", "Ravi", 1000)
+    attempt("Withdraw 600 (would leave 400)", lambda: sav.withdraw(600))
+    attempt("Withdraw 500 (leaves 500)", lambda: sav.withdraw(500))
+    attempt("Add 4% interest", lambda: sav.add_interest(4))
+    sav.statement()
+
+
+
+
+
+ 
+"""Lab Exercise 15: Library Management System.
+
+Classes: Book (base), ReferenceBook (inherits, cannot be issued), Member, Library.
+Concepts: inheritance, method overriding, availability status, issue/return rules.
+"""
+from datetime import date, timedelta
+
+
+class Book:
+    LOAN_DAYS = 14
+
+    def __init__(self, book_id, title, author):
+        self.book_id = book_id
+        self.title = title
+        self.author = author
+        self.available = True
+        self.due_date = None
+
+    def can_be_issued(self):
+        return self.available
+
+    def issue(self):
+        self.available = False
+        self.due_date = date.today() + timedelta(days=self.LOAN_DAYS)
+
+    def give_back(self):
+        self.available = True
+        self.due_date = None
+
+    def __str__(self):
+        status = "Available" if self.available else f"Issued (due {self.due_date})"
+        return f"[{self.book_id}] {self.title} by {self.author} - {status}"
+
+
+class ReferenceBook(Book):
+    """Overrides can_be_issued: reference books stay in the library."""
+
+    def can_be_issued(self):
+        return False
+
+    def __str__(self):
+        return f"[{self.book_id}] {self.title} by {self.author} - Reference only"
+
+
+class Member:
+    MAX_BOOKS = 2
+
+    def __init__(self, member_id, name):
+        self.member_id = member_id
+        self.name = name
+        self.borrowed = []   # list of Book objects
+
+
+class Library:
+    FINE_PER_DAY = 2
+
+    def __init__(self):
+        self.books = {}
+        self.members = {}
+
+    def add_book(self, book):
+        self.books[book.book_id] = book
+
+    def add_member(self, member):
+        self.members[member.member_id] = member
+
+    def issue_book(self, book_id, member_id):
+        book, member = self.books.get(book_id), self.members.get(member_id)
+        if book is None:
+            return "Issue failed: no such book."
+        if member is None:
+            return "Issue failed: no such member."
+        if isinstance(book, ReferenceBook):
+            return f"Issue failed: '{book.title}' is a reference book."
+        if not book.can_be_issued():
+            return f"Issue failed: '{book.title}' is already issued."
+        if len(member.borrowed) >= Member.MAX_BOOKS:
+            return f"Issue failed: {member.name} reached the limit of {Member.MAX_BOOKS} books."
+        book.issue()
+        member.borrowed.append(book)
+        return f"Issued '{book.title}' to {member.name}, due {book.due_date}."
+
+    def return_book(self, book_id, member_id, return_date=None):
+        book, member = self.books.get(book_id), self.members.get(member_id)
+        if book is None or member is None:
+            return "Return failed: invalid book or member."
+        if book not in member.borrowed:
+            return f"Return failed: {member.name} has not borrowed '{book.title}'."
+        return_date = return_date or date.today()
+        late_days = max(0, (return_date - book.due_date).days)
+        fine = late_days * self.FINE_PER_DAY
+        member.borrowed.remove(book)
+        book.give_back()
+        msg = f"'{book.title}' returned by {member.name}."
+        return msg + (f" Late by {late_days} day(s), fine Rs.{fine}." if fine else "")
+
+    def show_catalog(self):
+        print("\n--- Catalog ---")
+        for b in self.books.values():
+            print(b)
+
+    def show_available(self):
+        return [b.title for b in self.books.values() if b.can_be_issued()]
+
+
+if __name__ == "__main__":
+    lib = Library()
+    for b in (Book(1, "Python Crash Course", "Eric Matthes"),
+              Book(2, "Clean Code", "Robert Martin"),
+              Book(3, "Algorithms", "Sedgewick"),
+              ReferenceBook(4, "Oxford Dictionary", "OUP")):
+        lib.add_book(b)
+    lib.add_member(Member(101, "Asha"))
+    lib.add_member(Member(102, "Ravi"))
+
+    lib.show_catalog()
+
+    print("\n== Issue operations ==")
+    print(lib.issue_book(1, 101))
+    print(lib.issue_book(1, 102))     # already issued
+    print(lib.issue_book(4, 102))     # reference book
+    print(lib.issue_book(2, 101))
+    print(lib.issue_book(3, 101))     # member limit
+    print(lib.issue_book(9, 101))     # invalid book
+
+    print("\nAvailable now:", lib.show_available())
+
+    print("\n== Return operations ==")
+    print(lib.return_book(2, 102))    # Ravi never borrowed it
+    print(lib.return_book(1, 101, date.today() + timedelta(days=20)))  # 6 days late
+    print(lib.return_book(2, 101))
+
+    lib.show_catalog()
+    print("\nAvailable now:", lib.show_available())
+
+
+
+
+
+
+
+
+ 
+ 
+"""Lab Exercise 16: Dice Simulator using the random module.
+
+random.randint(1, 6) gives a fair, uniform die face.
+Run with no arguments for the demo, or `python lab16_dice_simulator.py -i`
+for an interactive roller.
+"""
+import random
+import sys
+from collections import Counter
+
+
+def roll_dice(n_dice=1, sides=6):
+    """Roll n_dice dice and return the list of faces."""
+    return [random.randint(1, sides) for _ in range(n_dice)]
+
+
+def frequency_table(totals, n_dice, sides=6):
+    """Print observed vs expected frequency for every possible total."""
+    counts = Counter(totals)
+    trials = len(totals)
+    # Theoretical probabilities by counting all outcome combinations
+    ways = Counter({0: 1})
+    for _ in range(n_dice):
+        new = Counter()
+        for total, w in ways.items():
+            for face in range(1, sides + 1):
+                new[total + face] += w
+        ways = new
+    all_outcomes = sides ** n_dice
+
+    print(f"{'Total':>5} {'Count':>7} {'Observed%':>10} {'Expected%':>10}  Bar")
+    for total in range(n_dice, n_dice * sides + 1):
+        obs = counts[total] / trials * 100
+        exp = ways[total] / all_outcomes * 100
+        print(f"{total:>5} {counts[total]:>7} {obs:>9.2f}% {exp:>9.2f}%  {'#' * round(obs)}")
+
+
+def demo():
+    random.seed(42)  # remove this line for different results every run
+
+    print("== 1. Ten rolls of one die ==")
+    print([roll_dice()[0] for _ in range(10)])
+
+    print("\n== 2. Rolling two dice (board-game style) ==")
+    for i in range(1, 6):
+        d = roll_dice(2)
+        note = "  <- doubles, roll again!" if d[0] == d[1] else ""
+        print(f"Roll {i}: {d} total {sum(d)}{note}")
+
+    for trials in (60, 6000, 600000):
+        print(f"\n== 3. One die, {trials} trials ==")
+        frequency_table([roll_dice()[0] for _ in range(trials)], 1)
+
+    trials = 100000
+    print(f"\n== 4. Two dice, {trials} trials (sum of faces) ==")
+    frequency_table([sum(roll_dice(2)) for _ in range(trials)], 2)
+
+    print("""
+Interpretation:
+- With few trials the faces are uneven; as trials grow each face approaches
+  16.67% (1/6). This is the Law of Large Numbers.
+- With two dice the sums are NOT equally likely: 7 has 6 combinations
+  (16.67%) while 2 and 12 have only 1 (2.78%). Board games such as Monopoly
+  and Ludo rely on this: moves of 6-8 squares are the most common.
+- Each roll is independent: a previous 6 does not make another 6 less likely.""")
+
+
+def interactive():
+    print("Dice roller. Press Enter to roll, or type q to quit.")
+    history = []
+    n = int(input("How many dice? ") or 1)
+    while input("Roll? (Enter/q) ").strip().lower() != "q":
+        r = roll_dice(n)
+        history.append(sum(r))
+        print("You rolled", r, "total", sum(r))
+    if history:
+        print(f"\n{len(history)} rolls made.")
+        frequency_table(history, n)
+
+
+if __name__ == "__main__":
+    interactive() if "-i" in sys.argv else demo()
+
+ 
+
