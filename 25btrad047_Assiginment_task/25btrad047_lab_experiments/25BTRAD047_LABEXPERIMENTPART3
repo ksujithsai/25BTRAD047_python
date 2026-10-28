@@ -1,0 +1,369 @@
+"""
+Lab Exercise 8: Contact Book using Lists and Dictionaries
+
+Data structure choice (CT):
+  - LIST  -> holds all contacts; keeps insertion order and is easy to loop over.
+  - DICT  -> one contact; named fields (name, phone, email, organization)
+             are clearer than positions in a tuple/list.
+  => contacts = [ {"name": ..., "phone": ..., "email": ..., "organization": ...}, ... ]
+
+Real-world scenario (RWE): a small office / college department directory.
+"""
+
+
+# ---------- Core operations ----------
+
+def find_index(contacts, name):
+    """Return index of the contact with this exact name (case-insensitive), else -1."""
+    for i, c in enumerate(contacts):
+        if c["name"].lower() == name.strip().lower():
+            return i
+    return -1
+
+
+def add_contact(contacts, name, phone, email="", organization=""):
+    """Add a contact. Rejects empty names, non-numeric phones and duplicate names."""
+    name = name.strip()
+    if not name:
+        return False, "Name cannot be empty."
+    if not phone.replace("+", "").replace("-", "").replace(" ", "").isdigit():
+        return False, "Phone must contain only digits (and + - space)."
+    if find_index(contacts, name) != -1:
+        return False, f"'{name}' already exists."
+    contacts.append({"name": name, "phone": phone.strip(),
+                     "email": email.strip(), "organization": organization.strip()})
+    return True, f"Added '{name}'."
+
+
+def search_contacts(contacts, keyword):
+    """Return all contacts whose name, phone, email or organization contains keyword."""
+    keyword = keyword.strip().lower()
+    return [c for c in contacts
+            if any(keyword in str(value).lower() for value in c.values())]
+
+
+def update_contact(contacts, name, **changes):
+    """Update only the given fields of an existing contact."""
+    i = find_index(contacts, name)
+    if i == -1:
+        return False, f"'{name}' not found."
+    for field, value in changes.items():
+        if field not in contacts[i]:
+            return False, f"Unknown field '{field}'."
+        contacts[i][field] = value.strip()
+    return True, f"Updated '{contacts[i]['name']}'."
+
+
+def delete_contact(contacts, name):
+    i = find_index(contacts, name)
+    if i == -1:
+        return False, f"'{name}' not found."
+    removed = contacts.pop(i)
+    return True, f"Deleted '{removed['name']}'."
+
+
+def display_contacts(contacts):
+    """Print contacts as an aligned table, sorted by name."""
+    if not contacts:
+        print("  (contact book is empty)")
+        return
+    print(f"  {'Name':<18}{'Phone':<16}{'Email':<26}{'Organization'}")
+    print("  " + "-" * 72)
+    for c in sorted(contacts, key=lambda c: c["name"].lower()):
+        print(f"  {c['name']:<18}{c['phone']:<16}{c['email']:<26}{c['organization']}")
+
+
+# ---------- Testing (CT) ----------
+
+def run_tests():
+    book = []
+    # add
+    assert add_contact(book, "Asha Rao", "9876543210", "asha@college.edu", "CSE Dept")[0]
+    assert add_contact(book, "Ravi Kumar", "+91 98450-12345", "ravi@college.edu", "Admin")[0]
+    assert len(book) == 2
+    # invalid / duplicate input
+    assert not add_contact(book, "", "123")[0]
+    assert not add_contact(book, "Bad Phone", "abc")[0]
+    assert not add_contact(book, "asha rao", "111")[0]          # duplicate, case-insensitive
+    assert len(book) == 2
+    # search
+    assert len(search_contacts(book, "asha")) == 1
+    assert len(search_contacts(book, "college.edu")) == 2       # matches email
+    assert search_contacts(book, "zzz") == []
+    # update
+    assert update_contact(book, "Ravi Kumar", phone="9000000000")[0]
+    assert book[find_index(book, "Ravi Kumar")]["phone"] == "9000000000"
+    assert not update_contact(book, "Nobody", phone="1")[0]
+    assert not update_contact(book, "Asha Rao", age="20")[0]
+    # delete
+    assert delete_contact(book, "Asha Rao")[0]
+    assert find_index(book, "Asha Rao") == -1
+    assert not delete_contact(book, "Asha Rao")[0]              # already gone
+    assert len(book) == 1
+    print("All contact book tests passed.")
+
+
+# ---------- Menu-driven program ----------
+
+def main():
+    # Pre-loaded with a sample organizational directory (RWE)
+    contacts = []
+    add_contact(contacts, "Dr. Meena Iyer", "9845012345", "meena@college.edu", "HOD, CSE")
+    add_contact(contacts, "Suresh Nair", "9900112233", "suresh@college.edu", "Lab Technician")
+    add_contact(contacts, "Priya Sharma", "9123456780", "priya@college.edu", "Exam Cell")
+
+    menu = ("\n=== CONTACT BOOK ===\n1. Add  2. Search  3. Update  4. Delete  "
+            "5. Display all  6. Run tests  7. Exit")
+    while True:
+        print(menu)
+        choice = input("Choice: ").strip()
+        if choice == "1":
+            print(add_contact(contacts, input("Name: "), input("Phone: "),
+                              input("Email: "), input("Organization: "))[1])
+        elif choice == "2":
+            results = search_contacts(contacts, input("Search keyword: "))
+            display_contacts(results) if results else print("  No match found.")
+        elif choice == "3":
+            name = input("Name to update: ")
+            print("Leave a field blank to keep it unchanged.")
+            changes = {f: v for f, v in (("phone", input("New phone: ")),
+                                         ("email", input("New email: ")),
+                                         ("organization", input("New organization: "))) if v.strip()}
+            print(update_contact(contacts, name, **changes)[1])
+        elif choice == "4":
+            print(delete_contact(contacts, input("Name to delete: "))[1])
+        elif choice == "5":
+            display_contacts(contacts)
+        elif choice == "6":
+            run_tests()
+        elif choice == "7":
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice, try again.")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+    
+"""
+Lab Exercise 9: Student Grading System
+
+Data structure (CT): dictionary  {student_name: marks}
+Grade boundaries (out of 100):
+    90-100 -> A   80-89 -> B   70-79 -> C   60-69 -> D   50-59 -> E   below 50 -> F (Fail)
+
+Real-world scenario (RWE): end-semester result analysis for one class.
+"""
+
+PASS_MARK = 50
+
+
+def calculate_grade(marks):
+    """Convert marks to a letter grade using if/elif conditions."""
+    if not isinstance(marks, (int, float)) or marks < 0 or marks > 100:
+        raise ValueError(f"Invalid marks: {marks!r} (must be 0-100)")
+    if marks >= 90:
+        return "A"
+    elif marks >= 80:
+        return "B"
+    elif marks >= 70:
+        return "C"
+    elif marks >= 60:
+        return "D"
+    elif marks >= PASS_MARK:
+        return "E"
+    else:
+        return "F"
+
+
+def build_results(students):
+    """Return {name: (marks, grade, 'Pass'/'Fail')}."""
+    results = {}
+    for name, marks in students.items():
+        grade = calculate_grade(marks)
+        results[name] = (marks, grade, "Pass" if marks >= PASS_MARK else "Fail")
+    return results
+
+
+def display_results(results):
+    print(f"\n{'Student':<12}{'Marks':>7}{'Grade':>8}{'Result':>9}")
+    print("-" * 36)
+    for name, (marks, grade, status) in results.items():
+        print(f"{name:<12}{marks:>7}{grade:>8}{status:>9}")
+
+
+def analyse(results):
+    """Interpret class performance (RWE)."""
+    marks = {n: r[0] for n, r in results.items()}
+    average = sum(marks.values()) / len(marks)
+    topper = max(marks, key=marks.get)
+    lowest = min(marks, key=marks.get)
+    passed = sum(1 for r in results.values() if r[2] == "Pass")
+
+    distribution = {}
+    for _, grade, _ in results.values():
+        distribution[grade] = distribution.get(grade, 0) + 1
+
+    print(f"\nClass average : {average:.2f}")
+    print(f"Highest       : {topper} ({marks[topper]})")
+    print(f"Lowest        : {lowest} ({marks[lowest]})")
+    print(f"Pass rate     : {passed}/{len(results)} = {passed / len(results) * 100:.1f}%")
+    print("Grade distribution:")
+    for grade in "ABCDEF":
+        count = distribution.get(grade, 0)
+        print(f"  {grade}: {'#' * count} {count}")
+
+    if average >= 75:
+        print("Interpretation: Strong overall performance.")
+    elif average >= 60:
+        print("Interpretation: Satisfactory; some students need support.")
+    else:
+        print("Interpretation: Weak performance; revision / remedial classes advised.")
+
+
+def run_tests():
+    """Boundary-value tests: values just below, on and above each cut-off."""
+    cases = {100: "A", 90: "A", 89: "B", 80: "B", 79: "C", 70: "C", 69: "D",
+             60: "D", 59: "E", 50: "E", 49: "F", 0: "F", 89.5: "B", 49.9: "F"}
+    for marks, expected in cases.items():
+        actual = calculate_grade(marks)
+        assert actual == expected, f"{marks}: expected {expected}, got {actual}"
+    for bad in (-1, 101, "abc", None):
+        try:
+            calculate_grade(bad)
+            raise AssertionError(f"{bad!r} should have been rejected")
+        except ValueError:
+            pass
+    print("All grading tests passed.")
+
+
+def main():
+    run_tests()
+
+    # Sample class (includes boundary marks on purpose)
+    students = {"Aarav": 92, "Diya": 85, "Kabir": 70, "Meera": 59,
+                "Rohan": 49, "Sneha": 90, "Tanvi": 64, "Vikram": 38}
+    results = build_results(students)
+    display_results(results)
+    analyse(results)
+
+    # Optional: enter your own class
+    if input("\nEnter your own students? (y/n): ").strip().lower() == "y":
+        own = {}
+        while True:
+            name = input("Student name (blank to finish): ").strip()
+            if not name:
+                break
+            try:
+                own[name] = float(input(f"Marks for {name}: "))
+                calculate_grade(own[name])
+            except ValueError as e:
+                print("  ", e)
+                own.pop(name, None)
+        if own:
+            res = build_results(own)
+            display_results(res)
+            analyse(res)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+"""
+Lab Exercise 10: Frequency Counter using Dictionaries
+
+Idea (CT): dictionary {item: count}. For each item, add 1 to its count
+(starting from 0 if it hasn't been seen yet) using dict.get(item, 0) + 1.
+
+Real-world scenario (RWE): survey of favourite beverages and classroom feedback.
+"""
+
+import string
+
+
+def count_frequency(items):
+    """Count occurrences of every element in a list."""
+    freq = {}
+    for item in items:
+        freq[item] = freq.get(item, 0) + 1
+    return freq
+
+
+def word_frequency(sentence):
+    """Count words: lower-cased, punctuation removed."""
+    cleaned = sentence.lower().translate(str.maketrans("", "", string.punctuation))
+    return count_frequency(cleaned.split())
+
+
+def sort_by_count(freq):
+    """Most frequent first; ties broken alphabetically."""
+    return sorted(freq.items(), key=lambda pair: (-pair[1], str(pair[0])))
+
+
+def show(freq, title):
+    total = sum(freq.values())
+    print(f"\n{title}")
+    print(f"{'Item':<14}{'Count':>6}{'Share':>8}  Bar")
+    print("-" * 40)
+    for item, count in sort_by_count(freq):
+        print(f"{item:<14}{count:>6}{count / total * 100:>7.1f}%  {'*' * count}")
+
+
+def run_tests():
+    # list of elements
+    assert count_frequency([1, 2, 2, 3, 3, 3]) == {1: 1, 2: 2, 3: 3}
+    assert count_frequency([]) == {}
+    assert count_frequency(["a"]) == {"a": 1}
+    # sentences: case + punctuation handling
+    assert word_frequency("The cat. The CAT, the dog!") == {"the": 3, "cat": 2, "dog": 1}
+    assert word_frequency("") == {}
+    # accuracy check: counts must add up to the number of inputs
+    data = list("mississippi")
+    freq = count_frequency(data)
+    assert sum(freq.values()) == len(data)
+    assert freq == {"m": 1, "i": 4, "s": 4, "p": 2}
+    # cross-check against Python's built-in list.count
+    assert all(freq[k] == data.count(k) for k in freq)
+    print("All frequency counter tests passed.")
+
+
+def main():
+    run_tests()
+
+    # 1) Words in a sentence
+    sentence = input("\nEnter a sentence (or press Enter for a sample): ").strip()
+    if not sentence:
+        sentence = "Practice makes perfect. Practice daily, and practice with focus!"
+    show(word_frequency(sentence), f'Word frequency in: "{sentence}"')
+
+    # 2) Survey: favourite beverage (product preference)
+    survey = ["Tea", "Coffee", "Tea", "Juice", "Coffee", "Tea", "Water",
+              "Coffee", "Tea", "Juice", "Tea", "Coffee"]
+    freq = count_frequency(survey)
+    show(freq, "Survey: favourite beverage")
+    top, top_count = sort_by_count(freq)[0]
+    print(f"\nFinding: '{top}' is the most preferred ({top_count} of {len(survey)} "
+          f"responses = {top_count / len(survey) * 100:.0f}%).")
+
+    # 3) Classroom feedback ratings
+    ratings = [5, 4, 4, 3, 5, 5, 2, 4, 5, 3, 4, 5, 1, 4, 5]
+    freq = count_frequency(ratings)
+    show(freq, "Classroom feedback ratings (1-5)")
+    average = sum(r * c for r, c in freq.items()) / len(ratings)
+    print(f"\nAverage rating: {average:.2f}/5")
+    print("Interpretation:", "Mostly positive feedback." if average >= 4
+          else "Mixed feedback; review low ratings.")
+
+
+if __name__ == "__main__":
+    main()
+
+    
